@@ -9,23 +9,36 @@ struct RunConfig {
     command_name: String,
     show_help: bool,
     list_available_cases: bool,
+    repetitions: usize,
     cases: Vec<String>,
 }
 
 impl RunConfig {
     fn new(args: Vec<String>) -> RunConfig {
-        let mut config = RunConfig{
+        let mut config = RunConfig {
             command_name: args[0].to_owned(),
             show_help: false,
             list_available_cases: false,
+            repetitions: 1,
             cases: vec![],
         };
 
-        for arg in args.iter().skip(1) {
+        let mut args_iter = args.iter().skip(1);
+        while let Some(arg) = args_iter.next() {
             if arg == "-l" || arg == "--list" {
                 config.list_available_cases = true;
             } else if arg == "-h" || arg == "--help" {
                 config.show_help = true;
+            } else if arg == "-n" || arg == "--number" {
+                if let Some(value) = args_iter.next() {
+                    config.repetitions = value.parse::<usize>().unwrap_or_else(|_| {
+                        eprintln!("Invalid value for -n/--number: {}", value);
+                        std::process::exit(1);
+                    });
+                } else {
+                    eprintln!("Missing value for -n/--number");
+                    std::process::exit(1);
+                }
             } else {
                 config.cases.push(arg.to_owned());
             }
@@ -40,7 +53,10 @@ fn main() {
     let config = RunConfig::new(std::env::args().collect());
 
     if config.show_help {
-        println!("Usage: {} [-h | -l] [TestCases]", config.command_name);
+        println!(
+            "Usage: {} [-h | -l | -n N] [TestCases]",
+            config.command_name
+        );
         return;
     }
 
@@ -70,12 +86,15 @@ fn main() {
         // Run only specified test cases
         for case_name in config.cases {
             if let Some(test_case) = cases.get(&case_name) {
-                println!("[{}] Starting test", test_case.name);
+                for i in 0..config.repetitions {
+                    let test_case = test_case.clone();
+                    println!("[{}] Starting test #{}", test_case.name, i);
 
-                match test_case.run() {
-                    Ok(result) => results.push(result),
-                    Err(err) => {
-                        println!("[{}] Run failed: {err}", test_case.name);
+                    match test_case.run() {
+                        Ok(result) => results.push(result),
+                        Err(err) => {
+                            println!("[{}] Run failed: {err}", test_case.name);
+                        }
                     }
                 }
             } else {
@@ -236,6 +255,7 @@ fn results_to_csv(results: Vec<TestResult>) -> String {
     csv
 }
 
+#[derive(Clone)]
 struct TestCase {
     name: String,
     path: String,
