@@ -23,6 +23,7 @@ struct RunConfig {
     show_help: bool,
     list_available_cases: bool,
     repetitions: usize,
+    parse_only: bool,
     cases: Vec<String>,
 }
 
@@ -33,6 +34,7 @@ impl RunConfig {
             show_help: false,
             list_available_cases: false,
             repetitions: 1,
+            parse_only: false,
             cases: vec![],
         };
 
@@ -52,6 +54,8 @@ impl RunConfig {
                     eprintln!("Missing value for -n/--number");
                     std::process::exit(1);
                 }
+            } else if arg == "-p" || arg == "--parse-only" {
+                config.parse_only = true;
             } else {
                 config.cases.push(arg.to_owned());
             }
@@ -67,7 +71,7 @@ fn main() {
 
     if config.show_help {
         println!(
-            "Usage: {} [-h | -l | -n N] [TestCases]",
+            "Usage: {} [-h | -l | -n N | -p ] [TestCases]",
             config.command_name
         );
         return;
@@ -88,7 +92,7 @@ fn main() {
         for test_case in cases.values() {
             println!("[{}] Starting test", test_case.name);
 
-            match test_case.run() {
+            match test_case.run(config.parse_only) {
                 Ok(result) => results.push(result),
                 Err(err) => {
                     println!("[{}] Run failed: {err}", test_case.name);
@@ -96,7 +100,9 @@ fn main() {
             }
         }
     } else {
+        // make sure we don't measure the memory consumption of our own runs
         results.reserve(config.cases.len() * config.repetitions);
+
         // Run only specified test cases
         for case_name in config.cases {
             if let Some(test_case) = cases.get(&case_name) {
@@ -104,8 +110,12 @@ fn main() {
                     let test_case = test_case.clone();
                     println!("[{}] Starting test #{}", test_case.name, i);
 
-                    match test_case.run() {
-                        Ok(result) => results.push(result),
+                    match test_case.run(config.parse_only) {
+                        Ok(mut result) => {
+                            result.mem = ALLOCATOR.allocated();
+                            results.push(result)
+                        }
+
                         Err(err) => {
                             println!("[{}] Run failed: {err}", test_case.name);
                         }
@@ -279,7 +289,7 @@ impl Display for TestResult {
 fn results_to_csv(results: Vec<TestResult>) -> String {
     let mut csv = String::new();
 
-    writeln!(&mut csv, "Name,Total Time (s),Build Time (s),Setup Time (s),Resolution Time (s),Go to Def/Ref (max) (ms),Go to Def/Ref (min) (ms),Go to Def/Ref (mean) (ms)").unwrap();
+    writeln!(&mut csv, "Name,Total Time (s),Build Time (s),Setup Time (s),Resolution Time (s),Go to Def/Ref (max) (ms),Go to Def/Ref (min) (ms),Go to Def/Ref (mean) (ms),Memory (B)").unwrap();
 
     for res in results {
         writeln!(&mut csv, "{}", res).unwrap();
@@ -304,7 +314,7 @@ impl TestCase {
         }
     }
 
-    fn run(&self) -> Result<TestResult> {
+    fn run(&self, parse_only: bool) -> Result<TestResult> {
         let mut result = TestResult {
             name: self.name.clone(),
             ..Default::default()
@@ -322,30 +332,30 @@ impl TestCase {
 
         let mut cursor = unit.file(&self.path).unwrap().create_tree_cursor();
 
-        let build_start = std::time::Instant::now();
-        unit.binding_graph();
-        let build_end = std::time::Instant::now();
+        if !parse_only {
+            let build_start = std::time::Instant::now();
+            unit.binding_graph();
+            let build_end = std::time::Instant::now();
 
-        result.build_time = (build_end - build_start).as_millis() as usize;
+            result.build_time = (build_end - build_start).as_millis() as usize;
 
-        while cursor.go_to_next_terminal_with_kind(TerminalKind::Identifier) {
-            let goto_start = std::time::Instant::now();
-            unit.binding_graph().definition_at(&cursor);
-            if let Some(reference) = unit.binding_graph().reference_at(&cursor) {
-                reference.definitions().len();
+            while cursor.go_to_next_terminal_with_kind(TerminalKind::Identifier) {
+                let goto_start = std::time::Instant::now();
+                unit.binding_graph().definition_at(&cursor);
+                if let Some(reference) = unit.binding_graph().reference_at(&cursor) {
+                    reference.definitions().len();
+                }
+                let goto_end = std::time::Instant::now();
+
+                let goto_time = (goto_end - goto_start).as_millis() as usize;
+
+                result.goto_times.push(goto_time);
             }
-            let goto_end = std::time::Instant::now();
-
-            let goto_time = (goto_end - goto_start).as_millis() as usize;
-
-            result.goto_times.push(goto_time);
         }
-
         let total_end = std::time::Instant::now();
 
         result.total_time = (total_end - total_start).as_millis() as usize;
         result.resolution_time = result.total_time - result.build_time - result.setup_time;
-        result.mem = ALLOCATOR.allocated();
         Ok(result)
     }
 }
