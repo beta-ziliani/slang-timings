@@ -1,7 +1,14 @@
-use std::{collections::HashMap, fmt::{Display, Write}, path::Path};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Write},
+    path::Path,
+};
 
-use slang_solidity::{compilation::{AddFileResponse, InternalCompilationBuilder}, cst::{Cursor, TerminalKind}};
 use semver::Version;
+use slang_solidity::{
+    compilation::{AddFileResponse, InternalCompilationBuilder},
+    cst::{Cursor, TerminalKind},
+};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -128,7 +135,7 @@ impl CompilationBuilder {
         let path: String = file.into();
 
         self.seen_files.push(path.clone());
-        
+
         let contents = if let Ok(contents) = std::fs::read_to_string(file) {
             contents
         } else {
@@ -138,8 +145,12 @@ impl CompilationBuilder {
         let AddFileResponse { import_paths } = self.internal.add_file(path, &contents);
 
         for import_path in import_paths {
-            let file_id = resolve_path(file, &import_path)?; 
-            if self.internal.resolve_import(file, &import_path, file_id.clone()).is_err() {
+            let file_id = resolve_path(file, &import_path)?;
+            if self
+                .internal
+                .resolve_import(file, &import_path, file_id.clone())
+                .is_err()
+            {
                 return Err("Can't resolve import".into());
             }
             self.add_file(&file_id)?;
@@ -168,7 +179,9 @@ fn resolve_path(context_path: &str, path_to_resolve: &Cursor) -> Result<String> 
     let context_path = if let Some(context_path) = Path::new(context_path).parent() {
         context_path
     } else {
-        return Err(format!("Could not get parent of context_path: {context_path}"));
+        return Err(format!(
+            "Could not get parent of context_path: {context_path}"
+        ));
     };
 
     // HACK: The source file might be buried in some structure a/b/c/d/file.sol
@@ -199,7 +212,7 @@ fn resolve_path(context_path: &str, path_to_resolve: &Cursor) -> Result<String> 
             } else {
                 Err(format!("Path does not exist: {path_str}"))
             }
-        },
+        }
         None => Err(format!("Could not canonicalize path: {path}")),
     }
 }
@@ -239,7 +252,18 @@ impl TestResult {
 
 impl Display for TestResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{},{},{},{},{},{},{},{}", self.name, self.total_time as f32 / 1000.0, self.build_time  as f32 / 1000.0, self.setup_time as f32 / 1000.0, self.resolution_time as f32 / 1000.0, self.max_goto(), self.min_goto(), self.mean_goto())
+        write!(
+            f,
+            "{},{},{},{},{},{},{},{}",
+            self.name,
+            self.total_time as f32 / 1000.0,
+            self.build_time as f32 / 1000.0,
+            self.setup_time as f32 / 1000.0,
+            self.resolution_time as f32 / 1000.0,
+            self.max_goto(),
+            self.min_goto(),
+            self.mean_goto()
+        )
     }
 }
 
@@ -267,12 +291,12 @@ impl TestCase {
         TestCase {
             name,
             path,
-            version
+            version,
         }
     }
 
     fn run(&self) -> Result<TestResult> {
-        let mut result = TestResult{
+        let mut result = TestResult {
             name: self.name.clone(),
             ..Default::default()
         };
@@ -280,7 +304,7 @@ impl TestCase {
         let total_start = std::time::Instant::now();
         let mut builder = CompilationBuilder::create(self.version.clone());
         builder.add_file(&self.path)?;
-    
+
         let setup_start = std::time::Instant::now();
         let unit = builder.build();
         let setup_end = std::time::Instant::now();
@@ -329,9 +353,9 @@ fn setup_test_cases() -> HashMap<String, TestCase> {
 
     add_test_case(
         &mut cases,
-        "DoodledBears", 
-        "sol-sources/0x015E220901014BAE4f7e168925CD74e725e23692/sources/DoodledBears.sol", 
-        Version::new(0, 8, 11)
+        "DoodledBears",
+        "sol-sources/0x015E220901014BAE4f7e168925CD74e725e23692/sources/DoodledBears.sol",
+        Version::new(0, 8, 11),
     );
 
     add_test_case(
@@ -350,9 +374,9 @@ fn setup_test_cases() -> HashMap<String, TestCase> {
 
     add_test_case(
         &mut cases,
-        "SeniorBond", 
-        "sol-sources/0x0170f38fa8df1440521c8b8520BaAd0CdA132E82/sources/contracts/SeniorBond.sol", 
-        Version::new(0, 7, 6)
+        "SeniorBond",
+        "sol-sources/0x0170f38fa8df1440521c8b8520BaAd0CdA132E82/sources/contracts/SeniorBond.sol",
+        Version::new(0, 7, 6),
     );
 
     add_test_case(
@@ -364,9 +388,9 @@ fn setup_test_cases() -> HashMap<String, TestCase> {
 
     add_test_case(
         &mut cases,
-        "Darts", 
-        "sol-sources/0x01a5E3268E3987f0EE5e6Eb12fe63fa2AF992D83/sources/contracts/Darts.sol", 
-        Version::new(0, 8, 0)
+        "Darts",
+        "sol-sources/0x01a5E3268E3987f0EE5e6Eb12fe63fa2AF992D83/sources/contracts/Darts.sol",
+        Version::new(0, 8, 0),
     );
 
     add_test_case(
@@ -378,37 +402,37 @@ fn setup_test_cases() -> HashMap<String, TestCase> {
 
     add_test_case(
         &mut cases,
-        "0xProject", 
-        "sol-sources/0xProject/contracts/governance/src/ZeroExProtocolGovernor.sol", 
-        Version::new(0, 8, 19)
-    );
-    
-    add_test_case(
-        &mut cases,
-        "Uniswap", 
-        "sol-sources/Uniswap/contracts/UniswapV3Factory.sol", 
-        Version::new(0, 7, 6)
+        "0xProject",
+        "sol-sources/0xProject/contracts/governance/src/ZeroExProtocolGovernor.sol",
+        Version::new(0, 8, 19),
     );
 
     add_test_case(
         &mut cases,
-        "AAVE", 
-        "sol-sources/aave-v3-core-master/contracts/protocol/pool/Pool.sol", 
-        Version::new(0, 8, 10)
+        "Uniswap",
+        "sol-sources/Uniswap/contracts/UniswapV3Factory.sol",
+        Version::new(0, 7, 6),
     );
-    
+
     add_test_case(
         &mut cases,
-        "GraphToken", 
-        "sol-sources/graph_protocol/contracts/token/GraphToken.sol", 
-        Version::new(0, 7, 6)
+        "AAVE",
+        "sol-sources/aave-v3-core-master/contracts/protocol/pool/Pool.sol",
+        Version::new(0, 8, 10),
+    );
+
+    add_test_case(
+        &mut cases,
+        "GraphToken",
+        "sol-sources/graph_protocol/contracts/token/GraphToken.sol",
+        Version::new(0, 7, 6),
     );
 
     add_test_case(
         &mut cases,
         "lidofinance",
         "sol-sources/lidofinance/contracts/0.8.9/WithdrawalQueueERC721.sol",
-        Version::new(0, 8, 9)
+        Version::new(0, 8, 9),
     );
 
     cases
@@ -416,13 +440,7 @@ fn setup_test_cases() -> HashMap<String, TestCase> {
 
 fn add_test_case(cases: &mut HashMap<String, TestCase>, name: &str, path: &str, version: Version) {
     cases.insert(
-        name.into(), 
-        TestCase::new(
-            name.into(),
-            path.into(), 
-            version
-        )
+        name.into(),
+        TestCase::new(name.into(), path.into(), version),
     );
 }
-
-
