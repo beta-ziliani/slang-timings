@@ -12,6 +12,12 @@ use slang_solidity::{
 
 type Result<T> = std::result::Result<T, String>;
 
+use cap::Cap;
+use std::alloc;
+
+#[global_allocator]
+static ALLOCATOR: Cap<alloc::System> = Cap::new(alloc::System, usize::max_value());
+
 struct RunConfig {
     command_name: String,
     show_help: bool,
@@ -90,6 +96,7 @@ fn main() {
             }
         }
     } else {
+        results.reserve(config.cases.len() * config.repetitions);
         // Run only specified test cases
         for case_name in config.cases {
             if let Some(test_case) = cases.get(&case_name) {
@@ -225,6 +232,7 @@ struct TestResult {
     setup_time: usize,
     resolution_time: usize,
     goto_times: Vec<usize>,
+    mem: usize,
 }
 
 impl TestResult {
@@ -254,7 +262,7 @@ impl Display for TestResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{}",
             self.name,
             self.total_time as f32 / 1000.0,
             self.build_time as f32 / 1000.0,
@@ -262,7 +270,8 @@ impl Display for TestResult {
             self.resolution_time as f32 / 1000.0,
             self.max_goto(),
             self.min_goto(),
-            self.mean_goto()
+            self.mean_goto(),
+            self.mem
         )
     }
 }
@@ -336,7 +345,7 @@ impl TestCase {
 
         result.total_time = (total_end - total_start).as_millis() as usize;
         result.resolution_time = result.total_time - result.build_time - result.setup_time;
-
+        result.mem = ALLOCATOR.allocated();
         Ok(result)
     }
 }
