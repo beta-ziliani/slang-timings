@@ -28,6 +28,8 @@ struct RunConfig {
 }
 
 impl RunConfig {
+    const MAX_GOTO_TIMES: usize = 4096;
+
     fn new(args: Vec<String>) -> RunConfig {
         let mut config = RunConfig {
             command_name: args[0].to_owned(),
@@ -88,12 +90,21 @@ fn main() {
     let mut results = vec![];
 
     if config.cases.is_empty() {
+        // make sure we don't measure the memory consumption of our own runs
+        results.reserve(cases.len() * config.repetitions);
+
         // Run all test cases when none are specified
         for test_case in cases.values() {
             println!("[{}] Starting test", test_case.name);
 
-            match test_case.run(config.parse_only) {
-                Ok(result) => results.push(result),
+            let mut result = TestResult::new(test_case.name.clone());
+
+            let mem = ALLOCATOR.allocated();
+            match test_case.run(&mut result, config.parse_only) {
+                Ok(_) => {
+                    result.mem = ALLOCATOR.allocated() - mem;
+                    results.push(result)
+                }
                 Err(err) => {
                     println!("[{}] Run failed: {err}", test_case.name);
                 }
@@ -110,10 +121,13 @@ fn main() {
                     let test_case = test_case.clone();
                     println!("[{}] Starting test #{}", test_case.name, i);
 
-                    match test_case.run(config.parse_only) {
-                        Ok(mut result) => {
-                            result.mem = ALLOCATOR.allocated();
-                            results.push(result)
+                    let mut result = TestResult::new(test_case.name.clone());
+
+                    let mem = ALLOCATOR.allocated();
+                    match test_case.run(&mut result, config.parse_only) {
+                        Ok(_) => {
+                            result.mem = ALLOCATOR.allocated() - mem;
+                            results.push(result);
                         }
 
                         Err(err) => {
@@ -246,6 +260,17 @@ struct TestResult {
 }
 
 impl TestResult {
+    fn new(case_name: String) -> TestResult {
+        let mut goto_times = vec![];
+        goto_times.reserve(RunConfig::MAX_GOTO_TIMES);
+
+        TestResult {
+            name: case_name,
+            goto_times,
+            ..Default::default()
+        }
+    }
+
     fn max_goto(&self) -> usize {
         if let Some(max) = self.goto_times.iter().max() {
             *max
@@ -314,12 +339,7 @@ impl TestCase {
         }
     }
 
-    fn run(&self, parse_only: bool) -> Result<TestResult> {
-        let mut result = TestResult {
-            name: self.name.clone(),
-            ..Default::default()
-        };
-
+    fn run(&self, result: &mut TestResult, parse_only: bool) -> Result<()> {
         let total_start = std::time::Instant::now();
         let mut builder = CompilationBuilder::create(self.version.clone());
         builder.add_file(&self.path)?;
@@ -350,13 +370,16 @@ impl TestCase {
                 let goto_time = (goto_end - goto_start).as_millis() as usize;
 
                 result.goto_times.push(goto_time);
+                if result.goto_times.len() >= RunConfig::MAX_GOTO_TIMES {
+                    eprintln!("Capacity exceeded!");
+                }
             }
         }
         let total_end = std::time::Instant::now();
 
         result.total_time = (total_end - total_start).as_millis() as usize;
         result.resolution_time = result.total_time - result.build_time - result.setup_time;
-        Ok(result)
+        Ok(())
     }
 }
 
